@@ -1,38 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Dec  1 13:33:45 2022
+Created on Wed Jan 11 15:58:26 2023
 
 @author: rgonzalez
 """
-x = 20
-#%% importing libraries
+
+#%% librerias
 import numpy as np
 from scipy.io import loadmat  # this is the SciPy module that loads mat-files
 import matplotlib.pyplot as plt
 from datetime import datetime, date, time
 import csv
 import pandas as pd
+from sklearn import metrics
+import datetime
 
-#%% Data in .mat file
-path = '../Example/'
-# os.chdir(path)
-filename = 'edificios.mat'
-mat = loadmat(path + filename)  # load mat-file
-mdata = mat['data']  # variable in mat file
-mdtype = mdata.dtype 
-data = {n: mdata[n][0, 0] for n in mdtype.names}
-
-#%% Prepare df
-c = data.get('c')
-consumption = data.get('consumption_building')
-consumption_1 = np.expand_dims(consumption[:,0], axis = 1)
-consumption_m = data.get('consumption')
-consumption_t = np.zeros((8760,1))
-consumption_t = consumption.sum(axis=1, keepdims = True)
-
-#%% loading functions
-# [MAPE, RMSE, predictions, load_demand, estimated_errors] = APLF(data, 300, 0.2, 0.7, 24, 48, 3)
+#%% [MAPE, RMSE, predictions, load_demand, estimated_errors] = APLF(data, 300, 0.2, 0.7, 24, 48, 3)
 
 def initialize(C, R):
   # initialize parameters
@@ -144,6 +128,22 @@ def prediction(theta, x, C):
     e[i+1, 0] = np.sqrt((theta.sigmar[0][c]**2 * (theta.sigmad[0][c]**2 + np.dot(np.dot([0, 1], theta.etad[0:, c])**2, e[i]**2)))/(theta.sigmar[0][c]**2 + theta.sigmad[0][c]**2 + np.dot(np.dot([0, 1], theta.etad[0:, c])**2, e[i]**2)))
   return pred_s[1:], e[1:]
 
+#%% Cargar datos
+# Data in .mat file
+path = '../Example/'
+# os.chdir(path)
+filename = 'edificios.mat'
+mat = loadmat(path + filename)  # load mat-file
+mdata = mat['data']  # variable in mat file
+mdtype = mdata.dtype 
+data = {n: mdata[n][0, 0] for n in mdtype.names}
+
+#%% Prepare df
+c = data.get('c')
+consumption = data.get('consumption_building')
+consumption_m = data.get('consumption')
+consumption_t = np.zeros((8760,1))
+consumption_t = consumption.sum(axis=1, keepdims = True)
 
 #%% Execute model
 days_train = 20
@@ -185,6 +185,8 @@ for j in range(i+L+1, n-L, L):
 [MAPE, RMSE] = test(predictions, load_demand)
 print('MAPE = ', MAPE)
 print('RMSE = ', RMSE)
+
+#%% Guardar resultados
 with open('results/results_aggregated.csv', 'w+') as file:
     writer = csv.writer(file)
     writer.writerow(("predictions", "load demand", "estimated errors"))
@@ -194,4 +196,29 @@ with open('results/results_aggregated.csv', 'w+') as file:
         rcount = rcount + 1
     file.close()
 
-#  return MAPE, RMSE, predictions, load_demand, estimated_errors
+#%% Graficamos respecto a la remanda real para ver qué tal se ha hecho la predicción
+archivo = 'results/results_aggregated.csv'
+datos = pd.read_csv(archivo)
+
+datos['index'] = np.arange(len(datos))
+timestamp = np.zeros((8760,1))
+timestamp = pd.DataFrame(data.get('timestamp'))
+timestamp = timestamp.rename(columns={0:'timestamp'})
+timestamp = pd.to_datetime(timestamp['timestamp']-719529,unit='d').round('s')
+
+datos = pd.concat([timestamp, datos], axis = 1)
+error_min = datos.apply(lambda x: x['predictions']-x['estimated errors'], axis = 1)
+error_max = datos.apply(lambda x: x['predictions']+x['estimated errors'], axis = 1)
+
+fig, ax = plt.subplots() 
+fig.set_size_inches(12, 8)
+ax.plot(datos['timestamp'], datos['predictions'], color = 'blue')
+ax.plot(datos['timestamp'], datos['load demand'], color = 'red')
+ax.set_ylabel('Load demand')
+ax.fill_between(datos['timestamp'], error_min, error_max, color = 'red', alpha = 0.1)
+fig.autofmt_xdate()
+ax.set_xlim([datetime.date(2013, 1, 1), datetime.date(2013, 1, 7)])
+fig
+
+
+
